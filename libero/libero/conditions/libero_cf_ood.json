@@ -1,0 +1,92 @@
+{
+    "libero_cf_ood/01-pick_up_the_coke_can_and_place_it_on_the_plate.bddl": [
+        "on coke_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_ood/02-pick_up_the_coke_can_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on coke_1 plate_1"
+    ],
+    "libero_cf_ood/03-pick_up_the_coke_can_and_place_it_on_the_plate.bddl": [
+        "on coke_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_ood/04-pick_up_the_cup_and_place_it_on_the_plate.bddl": [
+        "on cup_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_ood/05-pick_up_the_cup_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on cup_1 plate_1"
+    ],
+    "libero_cf_ood/06-pick_up_the_cup_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on cup_1 plate_1"
+    ],
+    "libero_cf_ood/07-pick_up_the_beer_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on beer_1 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_ood/08-pick_up_the_beer_and_place_it_on_the_plate.bddl": [
+        "on beer_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_ood/09-pick_up_the_beer_and_place_it_on_the_plate.bddl": [
+        "on beer_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_ood/10-pick_up_the_apple_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on apple_1 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_ood/11-pick_up_the_apple_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on apple_1 plate_1"
+    ],
+    "libero_cf_ood/12-pick_up_the_apple_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on apple_1 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_ood/13-pick_up_the_banana_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on banana_1 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_ood/14-pick_up_the_banana_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on banana_1 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_ood/15-pick_up_the_banana_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on banana_1 plate_1"
+    ]
+}

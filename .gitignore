@@ -1,0 +1,27 @@
+*~
+.hydra
+*pyc
+datasets
+results
+outputs/*
+/MUJOCO_LOG.TXT
+wandb
+experiments/
+experiments_saved/
+clip/
+gpt/
+bert/
+
+*.mp4
+libero.egg-info/
+.vscode/
+
+# Libero config
+.libero/
+
+# Rollouts
+rollouts/
+rollouts_zip/
+
+# uv virtual environment
+.venv

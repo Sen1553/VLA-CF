@@ -1,0 +1,92 @@
+{
+    "libero_cf_spatial_focused/01-pick_up_the_cookie_box_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_spatial_focused/02-pick_up_the_ramekin_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_spatial_focused/03-pick_up_the_cookie_box_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_spatial_focused/04-pick_up_the_cookie_box_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_spatial_focused/05-pick_up_the_ramekin_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_spatial_focused/06-pick_up_the_ramekin_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_spatial_focused/07-pick_up_the_black_bowl_on_the_cookie_box_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_spatial_focused/08-pick_up_the_cookie_box_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_spatial_focused/09-pick_up_the_cookie_box_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_spatial_focused/10-pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_spatial_focused/11-pick_up_the_ramekin_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_spatial_focused/12-pick_up_the_black_bowl_next_to_the_plate_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_spatial_focused/13-pick_up_the_black_bowl_on_the_wooden_cabinet_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_spatial_focused/14-pick_up_the_black_bowl_on_the_wooden_cabinet_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ],
+    "libero_cf_spatial_focused/15-pick_up_the_ramekin_and_place_it_on_the_plate.bddl": [
+        "on cookies_1 plate_1",
+        "on akita_black_bowl_1 plate_1",
+        "on akita_black_bowl_2 plate_1",
+        "on glazed_rim_porcelain_ramekin_1 plate_1"
+    ]
+}
