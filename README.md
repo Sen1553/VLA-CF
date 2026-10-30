@@ -1,40 +1,73 @@
-# LIBERO-CF: Counterfactual Robustness Evaluation of Vision-Language-Action Models
+<h1 align="center">When Vision Overrides Language: Evaluating and Mitigating Counterfactual Failures in VLAs</h1>
 
-LIBERO-CF is an evaluation benchmark built on top of [LIBERO](https://github.com/Lifelong-Robot-Learning/LIBERO) for testing whether Vision-Language-Action (VLA) models can correctly follow counterfactual instructions.
+<p align="center"><strong>CoRL 2026 (Spotlight)</strong></p>
 
-By evaluating a set of plausible conditions for each task, LIBERO-CF probes whether a policy truly grounds language in the scene rather than relying on memorized behaviors.
+<p align="center">
+  <a href="https://vla-cf.github.io/"><img src="https://img.shields.io/badge/Project-Website-2ea44f.svg" alt="Project Website"></a>
+  <a href="https://arxiv.org/abs/2602.17659"><img src="https://img.shields.io/badge/arXiv-2602.17659-b31b1b.svg" alt="arXiv"></a>
+  <a href="https://huggingface.co/VLA-CF/models"><img src="https://img.shields.io/badge/Models-Hugging%20Face-ffd21e.svg" alt="Models"></a>
+</p>
 
-We measure two metrics per condition:
-- **Touch rate**: whether the end-effector contacts the object associated with the condition
-- **Success rate**: whether the condition is successfully completed
+<p align="center">
+  <a href="https://yuffish.github.io/">Yu Fang</a>,
+  <a href="https://cathyf9600.github.io/">Yuchun Feng</a>,
+  <a href="https://timsty1.github.io/">Dong Jing</a>,
+  <a href="https://jiaaqiliu.github.io/">Jiaqi Liu</a>,
+  <a href="https://yy-gx.github.io/">Yue Yang</a>,
+  <a href="https://zhenyuwei2003.github.io/">Zhenyu Wei</a>,
+  <a href="https://danszafir.com/">Daniel Szafir</a>,
+  <a href="https://dingmyu.github.io/">Mingyu Ding</a>
+  <br/>
+  University of North Carolina at Chapel Hill
+</p>
+
+This repository contains the two parts of our paper:
+
+- **LIBERO-CF**: a benchmark that tests whether Vision-Language-Action (VLA) models follow counterfactual instructions.
+- **Counterfactual Action Guidance (CAG)**: an inference-time method that mitigates counterfactual failures in VLAs.
+
+## Contents
+
+- [Part 1: LIBERO-CF](#part-1-libero-cf)
+- [Part 2: Counterfactual Action Guidance (CAG)](#part-2-counterfactual-action-guidance-cag)
+- [Repository Structure](#repository-structure)
+- [Citation](#citation)
+- [Acknowledgement](#acknowledgement)
+- [License](#license)
 
 ---
 
-## Task Suites
+## Part 1: LIBERO-CF
+
+LIBERO-CF is a counterfactual benchmark built on top of [LIBERO](https://github.com/Lifelong-Robot-Learning/LIBERO) for testing whether Vision-Language-Action (VLA) models can correctly follow counterfactual instructions. By evaluating a set of plausible conditions for each task, LIBERO-CF probes whether a policy truly grounds language in the scene rather than relying on memorized behaviors.
+
+The conditions for each task are defined in [`libero/libero/conditions/`](libero/libero/conditions/). The evaluation logs two metrics for every condition:
+- **Touch rate**: whether the gripper touches the object associated with the condition. We use this contact to indicate whether the policy follows the instruction for that condition
+- **Success rate**: whether the condition is successfully completed
+
+The paper reports results for two of these conditions per task: the instructed (counterfactual) task and the training task. The **grounding rate** is the touch rate of the corresponding condition.
+
+### Task Suites
 
 | Suite | Tasks | Description |
 |---|---|---|
 | `libero_cf_spatial` | 15 | Forked from LIBERO-Spatial, up to 4 conditions per task |
-| `libero_cf_spatial_focused` | 15 | Focused scene variant of `libero_cf_spatial` |
+| `libero_cf_spatial_focused` | 15 | Focused scene variant of `libero_cf_spatial`: training-task object removed in each scene |
 | `libero_cf_object` | 10 | Forked from LIBERO-Object, up to 4 conditions per task |
 | `libero_cf_long` | 10 | Forked from LIBERO-10, long-horizon manipulation |
-| `libero_cf_ood` | 15 | Out-of-distribution objects (coke can, beer, cup, apple, banana) not seen in LIBERO training |
+| `libero_cf_ood` | 15 | Based on LIBERO-Spatial, with out-of-distribution objects (coke can, beer, cup, apple, banana) not seen in LIBERO training |
 
----
+### Dataset
 
-## Dataset
+LIBERO-CF **does not require additional data collection** beyond the standard [LIBERO dataset](https://huggingface.co/datasets/physical-intelligence/libero) (LIBERO-Spatial, LIBERO-Object, LIBERO-Goal, LIBERO-10). All task suites are designed to evaluate models that have been fine-tuned on the standard LIBERO dataset. The benchmark probes whether those fine-tuned policies generalize beyond their training scenarios.
 
-LIBERO-CF does not require **additional data collection** beyond the standard [LIBERO dataset](https://huggingface.co/datasets/physical-intelligence/libero) (LIBERO-Spatial, LIBERO-Object, LIBERO-Goal, LIBERO-10). All task suites are designed to evaluate models that have been fine-tuned on the standard LIBERO dataset. The benchmark probes whether those fine-tuned policies generalize beyond their training scenarios.
-
----
-
-## Installation
+### Installation
 
 Clone the repository:
 
 ```bash
-git clone https://github.com/yuffish/libero_cf.git
-cd libero_cf
+git clone https://github.com/yuffish/VLA-CF.git
+cd VLA-CF
 ```
 
 Create and activate a virtual environment with [uv](https://github.com/astral-sh/uv):
@@ -54,19 +87,65 @@ uv pip install -e packages/openpi-client
 uv pip install -e .
 ```
 
----
+### Evaluation
 
-## Evaluation
+#### Step 1: Serve a policy
 
-### π0 / π0.5 (openpi)
+The policy runs in its own environment, and the benchmark connects to it over a WebSocket.
 
-In the **openpi** environment, serve the policy:
+**π0 / π0.5 (openpi)**
+
+Set up the **openpi** environment from `openpi-cf/`:
 
 ```bash
-CUDA_VISIBLE_DEVICES=<ID> XLA_PYTHON_CLIENT_PREALLOCATE=false uv run scripts/serve_policy.py --env LIBERO
+cd openpi-cf
+GIT_LFS_SKIP_SMUDGE=1 uv sync
+GIT_LFS_SKIP_SMUDGE=1 uv pip install -e .
 ```
 
-In a separate terminal, run the evaluation:
+Serve the policy:
+
+```bash
+# π0.5 (default for --env LIBERO)
+CUDA_VISIBLE_DEVICES=<ID> XLA_PYTHON_CLIENT_PREALLOCATE=false uv run scripts/serve_policy.py \
+    --port <port> \
+    --env LIBERO
+
+
+# π0
+CUDA_VISIBLE_DEVICES=<ID> XLA_PYTHON_CLIENT_PREALLOCATE=false uv run scripts/serve_policy.py \
+    --port <port> \
+    policy:checkpoint \
+        --policy.config=pi0_libero \
+        --policy.dir=gs://openpi-assets/checkpoints/pi0_libero
+```
+
+**OpenVLA-OFT**
+
+Set up the **openvla-oft** environment by following the [OpenVLA-OFT setup instructions](https://github.com/moojink/openvla-oft/blob/main/SETUP.md). Then copy `openvla-oft-cf/` over the root of your OpenVLA-OFT repository and install the remaining dependencies:
+
+```bash
+conda activate openvla-oft
+cd /path/to/openvla-oft
+cp -r /path/to/VLA-CF/openvla-oft-cf/. .
+pip install -e packages/openpi-client
+pip install tyro
+```
+
+Serve the policy:
+
+```bash
+CUDA_VISIBLE_DEVICES=<ID> python serving/serve_openvla_oft.py \
+    --model_path moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10 \
+    --task_suite_name <libero_suite> \
+    --port <port>
+```
+
+`<libero_suite>` selects the checkpoint's normalization statistics and must be the standard LIBERO suite that the CF suite is based on, such as `libero_spatial` for `libero_cf_spatial`.
+
+#### Step 2: Run the benchmark
+
+In a separate terminal, from the root of this repository, run the evaluation (use `--args.replan_steps 8` for OpenVLA-OFT):
 
 ```bash
 source .venv/bin/activate
@@ -80,56 +159,21 @@ python eval/main_cf.py \
     --args.port <port>
 ```
 
-### OpenVLA-OFT
-
-In the **openvla-oft** environment, copy `packages/` into the root of your OpenVLA-OFT repository, then install:
-
-```bash
-conda activate openvla-oft
-pip install -e packages/openpi-client
-pip install tyro
-```
-
-Serve the policy:
-
-```bash
-CUDA_VISIBLE_DEVICES=<ID> python serving/serve_openvla_oft.py \
-    --model_path moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10 \
-    --task_suite_name <suite> \
-    --port <port>
-```
-
-In a separate terminal, run the evaluation (use `--args.replan_steps 8` for OpenVLA-OFT):
-
-```bash
-source .venv/bin/activate
-export PYTHONPATH=$PYTHONPATH:$PWD
-export LIBERO_CONFIG_PATH=$PWD/.libero
-
-python eval/main_cf.py \
-    --args.task_suite_name <suite> \
-    --args.port <port> \
-    --args.replan_steps 8
-```
-
 Rollouts are saved to `rollouts/<suite>-<timestamp>/`.
 
-### Visualization
+To visualize rollouts, run:
 
 ```bash
 python eval/batch_visualize.py --rollouts_dir rollouts/<your_rollouts_dir>
 ```
 
-Outputs per-task videos, end-effector trajectories, and gripper-close heatmaps.
+This generates per-task videos, end-effector trajectories, and gripper-close heatmaps.
 
----
-
-
-## Example Output
+### Example Output
 
 All examples below use **50 rollouts per task** on an NVIDIA RTX 6000 (~17 min per task).
 
-### π0.5 on `libero_cf_spatial`
+#### π0.5 on `libero_cf_spatial`
 
 Task: `01-pick_up_the_cookie_box_and_place_it_on_the_plate`
 
@@ -138,7 +182,7 @@ Condition 'on cookies_1 plate_1'          touch rate: 35/50 (70.0%)   success ra
 Condition 'on akita_black_bowl_1 plate_1' touch rate: 16/50 (32.0%)   success rate: 15/50 (30.0%)
 ```
 
-### π0.5 on `libero_cf_spatial_focused`
+#### π0.5 on `libero_cf_spatial_focused`
 
 Task: `01-pick_up_the_cookie_box_and_place_it_on_the_plate`
 
@@ -147,7 +191,7 @@ Condition 'on cookies_1 plate_1'           touch rate: 49/50 (98.0%)   success r
 Condition 'on akita_black_bowl_2 plate_1'  touch rate:  1/50  (2.0%)   success rate:  0/50  (0.0%)
 ```
 
-### π0.5 on `libero_cf_long`
+#### π0.5 on `libero_cf_long`
 
 Task: `01-put_the_wine_bottle_in_the_bottom_drawer_of_the_cabinet`
 
@@ -156,11 +200,9 @@ Condition 'on wine_bottle_1 white_cabinet_1_bottom_region'        touch rate: 34
 Condition 'on akita_black_bowl_1 white_cabinet_1_bottom_region'   touch rate: 21/50 (42.0%)   success rate: 0/50 (0.0%)
 ```
 
----
+### Results
 
-## Results
-
-Success rates (%) on LIBERO-CF. **F.** (Faithful) = success rate on the instructed object; **B.** (Biased) = success rate on training-task objects. Higher F. and lower B. is better.
+Grounding and success rates (%) on LIBERO-CF. **F.** (Faithful) = rate on the instructed condition; **B.** (Biased) = rate on the training-task condition. Higher F. and lower B. are better.
 
 <table>
   <thead>
@@ -238,10 +280,129 @@ Success rates (%) on LIBERO-CF. **F.** (Faithful) = success rate on the instruct
 
 ---
 
-## Key Structure
+## Part 2: Counterfactual Action Guidance (CAG)
+
+Counterfactual Action Guidance is a dual-branch, inference-time scheme that strengthens language conditioning in VLAs. CAG combines a standard VLA policy with a language-unconditioned module, amplifying the language-induced difference between their action predictions. We provide example implementations for openpi (`openpi-cf/`) and OpenVLA-OFT (`openvla-oft-cf/`), in two versions:
+
+- **TF (training-free)**: the unconditioned branch is the VLA itself with its language input removed, so no additional model is needed.
+- **VA (Vision-Action)**: the unconditioned branch is a separately trained Vision-Action model, available on [Hugging Face](https://huggingface.co/VLA-CF/models).
+
+### Serve a CAG Policy
+
+Set up the environments as described in [Serve a policy](#step-1-serve-a-policy).
+
+#### π0 / π0.5 (openpi)
+
+Serve the CAG policy in the **openpi** environment.
+
+**TF version (training-free)**
+
+```bash
+# π0
+CUDA_VISIBLE_DEVICES=<ID> XLA_PYTHON_CLIENT_PREALLOCATE=false uv run scripts/serve_policy_TF.py \
+    --port <port> \
+    --guidance_scale 2.0 \
+    policy:checkpoint \
+        --policy.config=pi0_libero \
+        --policy.dir=gs://openpi-assets/checkpoints/pi0_libero
+
+
+# π0.5
+CUDA_VISIBLE_DEVICES=<ID> XLA_PYTHON_CLIENT_PREALLOCATE=false uv run scripts/serve_policy_TF.py \
+    --port <port> \
+    --guidance_scale 2.0 \
+    policy:checkpoint \
+        --policy.config=pi05_libero \
+        --policy.dir=gs://openpi-assets/checkpoints/pi05_libero
+```
+
+**VA version (with Vision-Action model)**
+
+Download the VA model for π0 from [VLA-CF/pi0-libero-VA](https://huggingface.co/VLA-CF/pi0-libero-VA) and for π0.5 from [VLA-CF/pi05-libero-VA](https://huggingface.co/VLA-CF/pi05-libero-VA).
+
+```bash
+# π0
+CUDA_VISIBLE_DEVICES=<ID> XLA_PYTHON_CLIENT_PREALLOCATE=false uv run scripts/serve_policy_VA.py \
+    --guidance_scale 1.5 \
+    --port <port> \
+    policy:checkpoint \
+        --policy.config=pi0_libero \
+        --policy.dir=gs://openpi-assets/checkpoints/pi0_libero \
+    uncond-policy:checkpoint \
+        --uncond_policy.config=pi0_libero_unconditioned \
+        --uncond_policy.dir=/path/to/pi0-libero-VA
+
+
+# π0.5
+CUDA_VISIBLE_DEVICES=<ID> XLA_PYTHON_CLIENT_PREALLOCATE=false uv run scripts/serve_policy_VA.py \
+    --guidance_scale 1.5 \
+    --port <port> \
+    policy:checkpoint \
+        --policy.config=pi05_libero \
+        --policy.dir=gs://openpi-assets/checkpoints/pi05_libero \
+    uncond-policy:checkpoint \
+        --uncond_policy.config=pi05_libero_unconditioned \
+        --uncond_policy.dir=/path/to/pi05-libero-VA
+```
+
+#### OpenVLA-OFT
+
+Serve the CAG policy in the **openvla-oft** environment. `<libero_suite>` is a standard LIBERO suite, as described in [Serve a policy](#step-1-serve-a-policy).
+
+**TF version (training-free)**
+
+```bash
+CUDA_VISIBLE_DEVICES=<ID> python serving/serve_openvla_oft_TF.py \
+    --model_path moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10 \
+    --task_suite_name <libero_suite> \
+    --guidance_scale 2.0 \
+    --port <port>
+```
+
+**VA version (with Vision-Action model)**
+
+Download the VA model from [VLA-CF/openvla-oft-libero-VA](https://huggingface.co/VLA-CF/openvla-oft-libero-VA).
+
+```bash
+CUDA_VISIBLE_DEVICES=<ID> python serving/serve_openvla_oft_VA.py \
+    --conditioned_model_path moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10 \
+    --unconditioned_model_path /path/to/openvla-oft-libero-VA \
+    --task_suite_name <libero_suite> \
+    --guidance_scale 2.0 \
+    --port <port>
+```
+
+### Evaluate
+
+In a separate terminal, from the root of this repository, run the evaluation against the CAG server:
+
+```bash
+source .venv/bin/activate
+export PYTHONPATH=$PYTHONPATH:$PWD
+export LIBERO_CONFIG_PATH=$PWD/.libero
+
+# Replace <suite> with one of: libero_cf_spatial, libero_cf_object, libero_cf_long,
+#   libero_cf_spatial_focused, libero_cf_ood
+
+# π0 / π0.5
+python eval/main_cf.py \
+    --args.task_suite_name <suite> \
+    --args.port <port>
+
+
+# OpenVLA-OFT
+python eval/main_cf.py \
+    --args.task_suite_name <suite> \
+    --args.port <port> \
+    --args.replan_steps 8
+```
+
+---
+
+## Repository Structure
 
 ```
-libero_cf/
+VLA-CF/
 ├── eval/
 │   ├── main_cf.py            # Main evaluation script
 │   ├── batch_visualize.py    # Batch visualization of saved rollouts
@@ -251,95 +412,11 @@ libero_cf/
 │       ├── bddl_files/       # Task definitions (.bddl) for each suite
 │       ├── conditions/       # Per-task counterfactual condition specs (.json)
 │       └── init_files/       # Initial simulator states per suite
+├── openpi-cf/                # openpi with CAG policy serving (π0 / π0.5)
+├── openvla-oft-cf/           # OpenVLA-OFT files with CAG policy serving, copied over the upstream repository
 ├── packages/
 │   └── openpi-client/        # WebSocket client for openpi-compatible servers
-├── scripts/                  # Dataset and task creation utilities
-```
-
----
-
-## Counterfactual Action Guidance
-
-Counterfactual action guidance provides an inference-time scheme to mitigate counterfactual failure, using a jointly served conditioned and unconditioned policy. We provide example implementations for openpi (**/openpi-cf**) and OpenVLA-OFT (**/openvla-oft-cf**) to serve CAG policies. Evaluation can be run using the same script described above.
-
-### π0 / π0.5 (openpi)
-
-Serve the CAG policy in the **openpi** environment.
-
-#### TF version (training-free)
-```bash
-# pi0
-CUDA_VISIBLE_DEVICES=<ID> XLA_PYTHON_CLIENT_PREALLOCATE=false uv run scripts/serve_policy_TF.py \
-    --port <port> \
-    --guidance_scale 2.0 \
-    policy:checkpoint \
-        --policy.config=pi0_libero \
-        --policy.dir=gs://openpi-assets/checkpoints/pi0_libero
-
-
-# pi05
-CUDA_VISIBLE_DEVICES=<ID> XLA_PYTHON_CLIENT_PREALLOCATE=false uv run scripts/serve_policy_TF.py \
-    --port <port> \
-    --guidance_scale 2.0 \
-    policy:checkpoint \
-        --policy.config=pi05_libero \
-        --policy.dir=gs://openpi-assets/checkpoints/pi05_libero
-```
-
-#### VA version (with unconditioned model)
-
-Download the unconditioned pi0 from [yuffish/pi0_libero_unconditioned](https://huggingface.co/yuffish/pi0_libero_unconditioned) and pi05 from [yuffish/pi05_libero_unconditioned](https://huggingface.co/yuffish/pi05_libero_unconditioned).
-
-```bash
-# pi0
-CUDA_VISIBLE_DEVICES=<ID> XLA_PYTHON_CLIENT_PREALLOCATE=false uv run scripts/serve_policy_VA.py \
-    --guidance_scale 1.5 \
-    --port <port> \
-    policy:checkpoint \
-        --policy.config=pi0_libero \
-        --policy.dir=gs://openpi-assets/checkpoints/pi0_libero \
-    uncond-policy:checkpoint \
-        --uncond_policy.config=pi0_libero_unconditioned \
-        --uncond_policy.dir=/path/to/pi0_libero_unconditioned
-
-
-# pi05
-CUDA_VISIBLE_DEVICES=<ID> XLA_PYTHON_CLIENT_PREALLOCATE=false uv run scripts/serve_policy_VA.py \
-    --guidance_scale 1.5 \
-    --port <port> \
-    policy:checkpoint \
-        --policy.config=pi05_libero \
-        --policy.dir=gs://openpi-assets/checkpoints/pi05_libero \
-    uncond-policy:checkpoint \
-        --uncond_policy.config=pi05_libero_unconditioned \
-        --uncond_policy.dir=/path/to/pi05_libero_unconditioned
-```
-
-### OpenVLA-OFT
-
-Serve the CAG policy in the **openvla-oft** environment.
-
-#### TF version (training-free)
-
-```bash
-CUDA_VISIBLE_DEVICES=<ID> python serving/serve_openvla_oft_TF.py \
-    --model_path moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10 \
-    --task_suite_name <suite> \
-    --guidance_scale 2.0 \
-    --port <port>
-```
-
-#### VA version (with unconditioned model)
-
-Download the unconditioned OpenVLA-OFT from [yuffish/openvla_oft_libero_unconditioned](https://huggingface.co/yuffish/openvla_oft_libero_unconditioned).
-
-```bash
-CUDA_VISIBLE_DEVICES=<ID> python serving/serve_openvla_oft_VA.py \
-    --conditioned_model_path moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10 \
-    --unconditioned_model_path /path/to/openvla-oft-unconditioned \
-    --task_suite_name <suite> \
-    --guidance_scale 2.0 \
-    --port <port>
+└── scripts/                  # Dataset and task creation utilities
 ```
 
 ---
@@ -349,22 +426,25 @@ CUDA_VISIBLE_DEVICES=<ID> python serving/serve_openvla_oft_VA.py \
 If you find our work useful, please cite:
 
 ```bibtex
-@article{liu2023libero,
-  title={Libero: Benchmarking knowledge transfer for lifelong robot learning},
-  author={Liu, Bo and Zhu, Yifeng and Gao, Chongkai and Feng, Yihao and Liu, Qiang and Zhu, Yuke and Stone, Peter},
-  journal={Advances in Neural Information Processing Systems},
-  volume={36},
-  pages={44776--44791},
-  year={2023}
-}
-
-@article{fang2026vision,
-  title={When vision overrides language: Evaluating and mitigating counterfactual failures in vlas},
+@article{fang2026when,
+  title={When Vision Overrides Language: Evaluating and Mitigating Counterfactual Failures in VLAs},
   author={Fang, Yu and Feng, Yuchun and Jing, Dong and Liu, Jiaqi and Yang, Yue and Wei, Zhenyu and Szafir, Daniel and Ding, Mingyu},
   journal={arXiv preprint arXiv:2602.17659},
   year={2026}
 }
 ```
+
+---
+
+## Acknowledgement
+
+This work builds upon excellent open-source projects:
+
+- [LIBERO](https://github.com/Lifelong-Robot-Learning/LIBERO)
+- [openpi](https://github.com/Physical-Intelligence/openpi)
+- [OpenVLA-OFT](https://github.com/moojink/openvla-oft)
+
+We gratefully acknowledge the authors of these projects.
 
 ---
 
