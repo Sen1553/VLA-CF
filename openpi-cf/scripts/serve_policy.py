@@ -4,6 +4,11 @@ import logging
 import socket
 from typing import Literal
 
+# Keep this import before model/tokenizer imports. Some Linux environments
+# segfault when the checkpoint/data-loader native dependencies are loaded later.
+# Preloading this stack was verified to avoid the import-time crash on RTX 4090 D.
+# isort: off
+import openpi.training.checkpoints as _checkpoints  # noqa: F401
 import tyro
 
 from openpi.models import pi0_config as _pi0_config
@@ -11,6 +16,7 @@ from openpi.policies import policy as _policy
 from openpi.policies import policy_config as _policy_config
 from openpi.serving import websocket_policy_server
 from openpi.training import config as _config
+# isort: on
 
 
 class EnvMode(enum.Enum):
