@@ -4,7 +4,7 @@ import logging
 import math
 import pathlib
 import json
-from typing import List
+from typing import Dict, List, Literal, Optional
 import os
 
 import imageio
@@ -25,6 +25,7 @@ from datetime import datetime
 
 LIBERO_DUMMY_ACTION = [0.0] * 6 + [-1.0]
 LIBERO_ENV_RESOLUTION = 256  # resolution used to render training data
+InputModality = Literal["language", "vision", "vision_language"]
 
 
 @dataclasses.dataclass
@@ -38,12 +39,14 @@ class Args:
     replan_steps: int = 5
     hide_grasped_object: bool = True
     starting_task_id: int = 0
+    # Validate server-side masking; observations and prompts are not changed here.
+    expected_modality: Optional[InputModality] = None
 
     #################################################################################################################
     # LIBERO environment-specific parameters
     #################################################################################################################
     task_suite_name: str = (
-        "libero_cf_long"  # Task suite. Options: libero_cf_spatial, libero_cf_object, libero_cf_long, libero_cf_spatial_focused
+        "libero_cf_long"  # Also supports libero_cf_probe (alias: libero-cf-probe).
     )
     num_steps_wait: int = 10  # Number of steps to wait for objects to stabilize i n sim
     num_trials_per_task: int = 50  # Number of rollouts per task
@@ -55,6 +58,51 @@ class Args:
     use_custom_conditions: bool = True
 
 
+def _resolve_input_modality(
+    server_metadata: Dict, expected_modality: Optional[InputModality]
+) -> Optional[InputModality]:
+    """Only label a run when the server's modality and mask flags agree."""
+    masks_by_modality = {
+        "language": {"mask_language_tokens": False, "mask_vision_tokens": True},
+        "vision": {"mask_language_tokens": True, "mask_vision_tokens": False},
+        "vision_language": {"mask_language_tokens": False, "mask_vision_tokens": False},
+    }
+    if expected_modality is not None and expected_modality not in masks_by_modality:
+        raise ValueError(f"Unsupported expected modality: {expected_modality!r}")
+
+    metadata = server_metadata if isinstance(server_metadata, dict) else {}
+    modality = metadata.get("input_modality")
+    errors = []
+    if not isinstance(modality, str) or modality not in masks_by_modality:
+        errors.append(f"input_modality must be one of {tuple(masks_by_modality)}, got {modality!r}")
+    else:
+        for key, expected_mask in masks_by_modality[modality].items():
+            actual_mask = metadata.get(key)
+            if type(actual_mask) is not bool or actual_mask != expected_mask:
+                errors.append(f"{key} must be {expected_mask!r} for {modality!r}, got {actual_mask!r}")
+
+    if metadata.get("model_backend") != "jax":
+        errors.append(f"model_backend must be 'jax', got {metadata.get('model_backend')!r}")
+    if expected_modality is not None:
+        if modality != expected_modality:
+            errors.append(f"expected input_modality={expected_modality!r}, got {modality!r}")
+        if errors:
+            raise ValueError("Server modality validation failed: " + "; ".join(errors))
+    elif errors:
+        logging.warning("Server modality is unverified; recording input_modality=null: %s", "; ".join(errors))
+        return None
+    return modality
+
+
+def _json_metadata_default(value):
+    """Preserve NumPy metadata received through msgpack as JSON values."""
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
 def eval_libero(args: Args) -> None:
     # Set random seed
     np.random.seed(args.seed)
@@ -62,12 +110,20 @@ def eval_libero(args: Args) -> None:
     # Initialize LIBERO task suite
     benchmark_dict = benchmark.get_benchmark_dict()
     task_suite = benchmark_dict[args.task_suite_name]()
+    # Resolve aliases before looking up condition files and naming rollout directories.
+    args = dataclasses.replace(args, task_suite_name=task_suite.name)
     num_tasks_in_suite = task_suite.n_tasks
     logging.info(f"Task suite: {args.task_suite_name}")
     logging.info(f"Number of tasks in suite: {num_tasks_in_suite}")
 
+    # Validate the handshake before creating outputs or launching simulator rollouts.
+    client = _websocket_client_policy.WebsocketClientPolicy(args.host, args.port)
+    server_metadata = client.get_server_metadata()
+    input_modality = _resolve_input_modality(server_metadata, args.expected_modality)
+
     global exp_name
-    exp_name = f"{args.task_suite_name}-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    modality_suffix = f"-{input_modality}" if input_modality is not None else ""
+    exp_name = f"{args.task_suite_name}{modality_suffix}-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
     save_path = f"rollouts/{exp_name}"
     video_out_path = f"{save_path}/videos"
     eef_pointcloud_out_path = f"{save_path}/eef_pointclouds"
@@ -79,6 +135,18 @@ def eval_libero(args: Args) -> None:
 
     # Setup logging to both console and file
     _setup_logging(video_out_path, args.task_suite_name)
+    with open(pathlib.Path(save_path) / "run_config.json", "w", encoding="utf-8") as fjson:
+        json.dump(
+            {
+                "args": dataclasses.asdict(args),
+                "server_metadata": server_metadata,
+                "input_modality": input_modality,
+            },
+            fjson,
+            indent=2,
+            default=_json_metadata_default,
+        )
+    logging.info("Server input modality: %s", input_modality if input_modality is not None else "unknown")
 
     # Load per-task custom conditions if provided
     conditions_db = _load_custom_conditions_db(args.task_suite_name) if args.use_custom_conditions else None
@@ -87,7 +155,10 @@ def eval_libero(args: Args) -> None:
     else:
         logging.info(f"No custom conditions provided")
 
-    if args.task_suite_name == "libero_spatial":
+    task_step_limit = getattr(task_suite, "get_task_max_steps", None)
+    if task_step_limit is not None:
+        max_steps = None  # Mixed suites set their source-specific limit inside the task loop.
+    elif args.task_suite_name == "libero_spatial":
         max_steps = 220  # longest training demo has 193 steps
     elif args.task_suite_name == "libero_object":
         max_steps = 280  # longest training demo has 254 steps
@@ -110,8 +181,6 @@ def eval_libero(args: Args) -> None:
     else:
         raise ValueError(f"Unknown task suite: {args.task_suite_name}")
 
-    client = _websocket_client_policy.WebsocketClientPolicy(args.host, args.port)
-
     # Start evaluation
     total_episodes, total_successes, total_touches = 0, 0, 0
     # Aggregate per-condition stats across tasks when custom conditions are provided
@@ -121,6 +190,8 @@ def eval_libero(args: Args) -> None:
             continue
         # Get task
         task = task_suite.get_task(task_id)
+        if task_step_limit is not None:
+            max_steps = task_step_limit(task_id)
         print(f"task: {task}")
 
         # Get default LIBERO initial states
@@ -391,6 +462,13 @@ def eval_libero(args: Args) -> None:
                         "result": str(suffix),
                         "steps": episode_trajectory,
                     }
+                episode_summary.update({
+                    "task_id": int(task_id),
+                    "input_modality": input_modality,
+                    "original_prompt": str(task_description),
+                    "sent_prompt": str(task_description),
+                    "max_steps": int(max_steps),
+                })
                 with open(traj_path, "w") as fjson:
                     json.dump(episode_summary, fjson, indent=2)
                 logging.info(f"Wrote episode trajectory to {traj_path}")

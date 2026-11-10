@@ -56,6 +56,35 @@ The paper reports results for two of these conditions per task: the instructed (
 | `libero_cf_object` | 10 | Forked from LIBERO-Object, up to 4 conditions per task |
 | `libero_cf_long` | 10 | Forked from LIBERO-10, long-horizon manipulation |
 | `libero_cf_ood` | 15 | Based on LIBERO-Spatial, with out-of-distribution objects (coke can, beer, cup, apple, banana) not seen in LIBERO training |
+| `libero_cf_probe` (`libero-cf-probe`) | 7 | Independent, fixed-order selection of 3 CF-Object and 4 CF-Spatial tasks |
+
+The **libero-cf-probe** suite has its own BDDL files, initial states, and condition
+JSON under the canonical name `libero_cf_probe`. Both spellings select the same
+suite. Original task names, conditions, and initial states are preserved, and the
+source suites are unchanged. Evaluation follows this order (task IDs are zero-based):
+
+| Task ID | Source suite | Task | Max steps |
+|---|---|---|---|
+| 0 | `libero_cf_object` | `05-pick_up_the_milk_and_place_it_in_the_basket` | 280 |
+| 1 | `libero_cf_object` | `02-pick_up_the_butter_and_place_it_in_the_basket` | 280 |
+| 2 | `libero_cf_object` | `04-pick_up_the_salad_dressing_and_place_it_in_the_basket` | 280 |
+| 3 | `libero_cf_spatial` | `05-pick_up_the_ramekin_and_place_it_on_the_plate` | 220 |
+| 4 | `libero_cf_spatial` | `13-pick_up_the_black_bowl_on_the_wooden_cabinet_and_place_it_on_the_plate` | 220 |
+| 5 | `libero_cf_spatial` | `01-pick_up_the_cookie_box_and_place_it_on_the_plate` | 220 |
+| 6 | `libero_cf_spatial` | `02-pick_up_the_ramekin_and_place_it_on_the_plate` | 220 |
+
+After starting a compatible policy server and activating the benchmark environment
+as described below, evaluate the probe suite from the repository root:
+
+```bash
+python eval/main_cf.py --args.task_suite_name libero-cf-probe --args.port 8000
+```
+
+Rollouts are saved under `rollouts/libero_cf_probe-<timestamp>/`, or
+`rollouts/libero_cf_probe-<modality>-<timestamp>/` when the server reports a
+verified input modality. The new suite
+does not define new model normalization statistics; model-server normalization
+must still match its checkpoint and the source tasks (Object or Spatial).
 
 ### Dataset
 
@@ -153,7 +182,7 @@ export PYTHONPATH=$PYTHONPATH:$PWD
 export LIBERO_CONFIG_PATH=$PWD/.libero
 
 # Replace <suite> with one of: libero_cf_spatial, libero_cf_object, libero_cf_long,
-#   libero_cf_spatial_focused, libero_cf_ood
+#   libero_cf_spatial_focused, libero_cf_ood, libero-cf-probe
 python eval/main_cf.py \
     --args.task_suite_name <suite> \
     --args.port <port>
@@ -168,6 +197,95 @@ python eval/batch_visualize.py --rollouts_dir rollouts/<your_rollouts_dir>
 ```
 
 This generates per-task videos, end-effector trajectories, and gripper-close heatmaps.
+
+#### Three input modalities on LIBERO-CF-PROBE (JAX π0.5)
+
+Use the same `pi05_libero` checkpoint for all three runs. Select the modality
+when starting `scripts/serve_policy.py`; the evaluator checks the server's
+reported masks before starting any episodes.
+
+| `--modality` | Inputs available to action generation | Language mask | Vision mask |
+|---|---|---|---|
+| `language` | Task instruction only | False | True |
+| `vision` | Agent-view and wrist images only | True | False |
+| `vision_language` | Images and task instruction | False | False |
+
+Run **one experiment at a time**. In the openpi environment, from `openpi-cf/`,
+start the language-only server:
+
+```bash
+uv run scripts/serve_policy.py --env LIBERO --port 8000 --modality language
+```
+
+In a separate terminal, activate the benchmark environment and run from the
+repository root:
+
+```bash
+python eval/main_cf.py \
+    --args.task_suite_name libero-cf-probe \
+    --args.host 127.0.0.1 \
+    --args.port 8000 \
+    --args.expected_modality language \
+    --args.num_trials_per_task 50 \
+    --args.seed 7
+```
+
+When evaluation finishes, stop the server. Repeat both commands with `vision`,
+then with `vision_language`, replacing both `--modality` and
+`--args.expected_modality`. Restarting the server also resets its sampling RNG.
+For a short smoke run, use `--args.num_trials_per_task 1` in all three runs.
+The seven tasks retain their original order, initial states, conditions, and
+limits: 280 action steps for the first three Object tasks and 220 for the four
+Spatial tasks, plus the existing 10 settling steps.
+
+To use a local checkpoint, keep its path identical in all three runs:
+
+```bash
+uv run scripts/serve_policy.py --port 8000 --modality language \
+    policy:checkpoint \
+    --policy.config pi05_libero \
+    --policy.dir /path/to/pi05_libero
+```
+
+The modality option requires a JAX π0.5 checkpoint and
+`discrete_state_input=False`, as configured by `pi05_libero`. A checkpoint
+containing `model.safetensors` is rejected for these experiments because this
+repository's PyTorch implementation does not implement the model-level mask
+flags. Omitting `--modality` preserves the model config's existing mask settings.
+
+The evaluator still sends the original instruction and both images. The server
+sets attention masks **before prefix KV-cache construction and throughout action
+sampling**. Thus language-only does not read image content, and vision-only
+does not read task text. Encoding the masked inputs still takes computation.
+An empty instruction is a separate ablation and is not used here. The state
+array remains in the request for interface compatibility; this π0.5 config
+does not tokenize robot state or add a separate state token.
+
+Each run saves `run_config.json` with evaluation arguments and server metadata
+(modality, masks, backend, checkpoint, config, and sampling steps). Episode
+trajectory JSON files include the modality, task ID, original/sent prompt, and
+action-step limit. The three result directories are:
+
+```text
+rollouts/libero_cf_probe-language-<timestamp>/
+rollouts/libero_cf_probe-vision-<timestamp>/
+rollouts/libero_cf_probe-vision_language-<timestamp>/
+```
+
+For comparison, keep the checkpoint, episode count, environment seed, and
+replanning interval identical. The environment seed does not itself control
+the model's sampling noise; restarting servers starts their RNG streams from
+the same seed, but diverging episode lengths can consume different numbers of
+samples. Inspect `per_condition` in the trajectory files: with custom conditions,
+`result=success` means **any** candidate condition succeeded, so it does not by
+itself establish success on the instructed target.
+
+The fixed-noise modality tests use a small randomly initialized model and do not
+download checkpoints. Run them from `openpi-cf/` in the openpi environment:
+
+```bash
+uv run pytest src/openpi/models/pi0_test.py -k single_modality_invariance -q
+```
 
 ### Example Output
 
@@ -382,7 +500,7 @@ export PYTHONPATH=$PYTHONPATH:$PWD
 export LIBERO_CONFIG_PATH=$PWD/.libero
 
 # Replace <suite> with one of: libero_cf_spatial, libero_cf_object, libero_cf_long,
-#   libero_cf_spatial_focused, libero_cf_ood
+#   libero_cf_spatial_focused, libero_cf_ood, libero-cf-probe
 
 # π0 / π0.5
 python eval/main_cf.py \

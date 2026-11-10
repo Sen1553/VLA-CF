@@ -23,7 +23,8 @@ def create_trained_policy(
     repack_transforms: transforms.Group | None = None,
     sample_kwargs: dict[str, Any] | None = None,
     norm_stats: dict[str, transforms.NormStats] | None = None,
-    pytorch_device: str | None = None
+    pytorch_device: str | None = None,
+    require_jax: bool = False,
 ) -> _policy.Policy:
     """Create a policy from a trained checkpoint.
 
@@ -37,9 +38,10 @@ def create_trained_policy(
             from the checkpoint directory.
         pytorch_device: Device to use for PyTorch models (e.g., "cpu", "cuda", "cuda:0").
                       If None and is_pytorch=True, will use "cuda" if available, otherwise "cpu".
+        require_jax: Reject PyTorch checkpoints before loading weights, for JAX-only experiments.
     Note:
         The function automatically detects whether the model is PyTorch-based by checking for the
-        presence of "model.safensors" in the checkpoint directory.
+        presence of "model.safetensors" in the checkpoint directory.
     """
     repack_transforms = repack_transforms or transforms.Group()
     checkpoint_dir = download.maybe_download(str(checkpoint_dir))
@@ -47,6 +49,15 @@ def create_trained_policy(
     # Check if this is a PyTorch model by looking for model.safetensors
     weight_path = os.path.join(checkpoint_dir, "model.safetensors")
     is_pytorch = os.path.exists(weight_path)
+    if is_pytorch and (
+        require_jax
+        or getattr(train_config.model, "mask_language_tokens", False)
+        or getattr(train_config.model, "mask_vision_tokens", False)
+    ):
+        raise ValueError(
+            "This modality experiment requires a JAX checkpoint (a params/ directory). "
+            "The PyTorch implementation does not support the configured modality masks."
+        )
 
     logging.info("Loading model...")
     if is_pytorch:
@@ -87,7 +98,7 @@ def create_trained_policy(
             *repack_transforms.outputs,
         ],
         sample_kwargs=sample_kwargs,
-        metadata=train_config.policy_metadata,
+        metadata={**(train_config.policy_metadata or {}), "model_backend": "pytorch" if is_pytorch else "jax"},
         is_pytorch=is_pytorch,
         pytorch_device=pytorch_device if is_pytorch else None,
     )

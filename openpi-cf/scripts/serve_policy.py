@@ -2,9 +2,11 @@ import dataclasses
 import enum
 import logging
 import socket
+from typing import Literal
 
 import tyro
 
+from openpi.models import pi0_config as _pi0_config
 from openpi.policies import policy as _policy
 from openpi.policies import policy_config as _policy_config
 from openpi.serving import websocket_policy_server
@@ -52,6 +54,9 @@ class Args:
     # Probability of injecting the default prompt. If 0, this transform is a no-op.
     probability: float = 0.0
 
+    # Explicit input ablation for JAX pi05_libero. None preserves the checkpoint config.
+    modality: Literal["language", "vision", "vision_language"] | None = None
+
     # Port to serve the policy on.
     port: int = 8000
     # Record the policy's behavior for debugging.
@@ -82,11 +87,73 @@ DEFAULT_CHECKPOINT: dict[EnvMode, Checkpoint] = {
 }
 
 
-def create_default_policy(env: EnvMode, *, default_prompt: str | None = None) -> _policy.Policy:
+def _create_checkpoint_policy(
+    checkpoint: Checkpoint,
+    *,
+    default_prompt: str | None = None,
+    overwrite: bool = False,
+    probability: float = 0.0,
+    modality: Literal["language", "vision", "vision_language"] | None = None,
+) -> _policy.Policy:
+    config = _config.get_config(checkpoint.config)
+    metadata = {
+        **(config.policy_metadata or {}),
+        "training_config": checkpoint.config,
+        "checkpoint": checkpoint.dir,
+    }
+    if modality is not None:
+        if modality not in ("language", "vision", "vision_language"):
+            raise ValueError(f"Unsupported input modality: {modality}")
+        if not isinstance(config.model, _pi0_config.Pi0Config) or not config.model.pi05:
+            raise ValueError("--modality requires a pi0.5 config, such as pi05_libero.")
+        if config.model.discrete_state_input:
+            raise ValueError(
+                "--modality requires discrete_state_input=False (as in pi05_libero), "
+                "so masking language does not also remove robot state tokens."
+            )
+        # Configure before Policy creates its frozen JIT wrapper.
+        config = dataclasses.replace(
+            config,
+            model=dataclasses.replace(
+                config.model,
+                mask_language_tokens=modality == "vision",
+                mask_vision_tokens=modality == "language",
+            ),
+        )
+        metadata.update(
+            input_modality=modality,
+            mask_language_tokens=config.model.mask_language_tokens,
+            mask_vision_tokens=config.model.mask_vision_tokens,
+            sampling_num_steps=10,
+        )
+    config = dataclasses.replace(config, policy_metadata=metadata)
+    return _policy_config.create_trained_policy(
+        config,
+        checkpoint.dir,
+        default_prompt=default_prompt,
+        overwrite=overwrite,
+        probability=probability,
+        sample_kwargs={"num_steps": 10} if modality is not None else None,
+        require_jax=modality is not None,
+    )
+
+
+def create_default_policy(
+    env: EnvMode,
+    *,
+    default_prompt: str | None = None,
+    overwrite: bool = False,
+    probability: float = 0.0,
+    modality: Literal["language", "vision", "vision_language"] | None = None,
+) -> _policy.Policy:
     """Create a default policy for the given environment."""
     if checkpoint := DEFAULT_CHECKPOINT.get(env):
-        return _policy_config.create_trained_policy(
-            _config.get_config(checkpoint.config), checkpoint.dir, default_prompt=default_prompt
+        return _create_checkpoint_policy(
+            checkpoint,
+            default_prompt=default_prompt,
+            overwrite=overwrite,
+            probability=probability,
+            modality=modality,
         )
     raise ValueError(f"Unsupported environment mode: {env}")
 
@@ -95,17 +162,27 @@ def create_policy(args: Args) -> _policy.Policy:
     """Create a policy from the given arguments."""
     match args.policy:
         case Checkpoint():
-            return _policy_config.create_trained_policy(
-                _config.get_config(args.policy.config), args.policy.dir, 
-                overwrite=args.overwrite, default_prompt=args.default_prompt
+            return _create_checkpoint_policy(
+                args.policy,
+                default_prompt=args.default_prompt,
+                overwrite=args.overwrite,
+                probability=args.probability,
+                modality=args.modality,
             )
         case Default():
-            return create_default_policy(args.env, default_prompt=args.default_prompt)
+            return create_default_policy(
+                args.env,
+                default_prompt=args.default_prompt,
+                overwrite=args.overwrite,
+                probability=args.probability,
+                modality=args.modality,
+            )
 
 
 def main(args: Args) -> None:
     policy = create_policy(args)
     policy_metadata = policy.metadata
+    logging.info("Policy metadata: %s", policy_metadata)
 
     # Record the policy's behavior.
     if args.record:

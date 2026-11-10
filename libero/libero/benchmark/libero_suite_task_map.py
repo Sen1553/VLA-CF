@@ -1,4 +1,13 @@
 libero_task_map = {
+    "libero_cf_probe": [
+        "05-pick_up_the_milk_and_place_it_in_the_basket",
+        "02-pick_up_the_butter_and_place_it_in_the_basket",
+        "04-pick_up_the_salad_dressing_and_place_it_in_the_basket",
+        "05-pick_up_the_ramekin_and_place_it_on_the_plate",
+        "13-pick_up_the_black_bowl_on_the_wooden_cabinet_and_place_it_on_the_plate",
+        "01-pick_up_the_cookie_box_and_place_it_on_the_plate",
+        "02-pick_up_the_ramekin_and_place_it_on_the_plate",
+    ],
     "libero_cf_spatial": [
         "01-pick_up_the_cookie_box_and_place_it_on_the_plate",
         "02-pick_up_the_ramekin_and_place_it_on_the_plate",

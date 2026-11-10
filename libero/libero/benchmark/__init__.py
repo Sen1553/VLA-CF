@@ -64,7 +64,8 @@ libero_suites = [
     "libero_cf_spatial_focused",
     "libero_cf_object",
     "libero_cf_long",
-    "libero_cf_ood"
+    "libero_cf_ood",
+    "libero_cf_probe",
 ]
 task_maps = {}
 max_len = 0
@@ -261,3 +262,21 @@ class LIBERO_CF_OOD(Benchmark):
         super().__init__(task_order_index=task_order_index)
         self.name = "libero_cf_ood"
         self._make_benchmark()
+
+
+@register_benchmark
+class LIBERO_CF_PROBE(Benchmark):
+    """Seven fixed-order Object/Spatial tasks with independent benchmark assets."""
+
+    def __init__(self, task_order_index=0):
+        super().__init__(task_order_index=task_order_index)
+        self.name = "libero_cf_probe"
+        self._make_benchmark()
+
+    def get_task_max_steps(self, i):
+        # Preserve the source-suite horizons: three Object tasks, then four Spatial tasks.
+        return (280, 280, 280, 220, 220, 220, 220)[i]
+
+
+# Accept the requested hyphenated spelling as well as the conventional Python name.
+BENCHMARK_MAPPING["libero-cf-probe"] = BENCHMARK_MAPPING["libero_cf_probe"]
