@@ -1,5 +1,6 @@
 import collections
 import dataclasses
+import faulthandler
 import logging
 import math
 import pathlib
@@ -56,6 +57,8 @@ class Args:
     #################################################################################################################
     seed: int = 7  # Random Seed (for reproducibility)
     use_custom_conditions: bool = True
+    # Stop before scoring an episode whose rollout raised an exception.
+    stop_on_error: bool = False
 
 
 def _resolve_input_modality(
@@ -360,8 +363,13 @@ def eval_libero(args: Args) -> None:
                         break
                     t += 1
 
-                except Exception as e:
-                    logging.error(f"Caught exception: {e}")
+                except Exception:
+                    logging.exception(
+                        "Rollout error: task_id=%s episode_index=%s step=%s",
+                        task_id, episode_idx, t,
+                    )
+                    if args.stop_on_error:
+                        raise
                     break
 
             task_episodes += 1
@@ -815,5 +823,7 @@ def _get_conditions_for_task(db, problem_key: str):
 
 
 if __name__ == "__main__":
+    # Native crashes (e.g. SIGSEGV) bypass Python's exception handlers.
+    faulthandler.enable(all_threads=True)
     logging.basicConfig(level=logging.INFO)
     tyro.cli(eval_libero)
