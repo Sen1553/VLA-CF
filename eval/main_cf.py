@@ -24,6 +24,11 @@ import tqdm
 import tyro
 from datetime import datetime
 
+if __package__:
+    from . import task_outcome_metrics as _task_metrics
+else:
+    import task_outcome_metrics as _task_metrics
+
 LIBERO_DUMMY_ACTION = [0.0] * 6 + [-1.0]
 LIBERO_ENV_RESOLUTION = 256  # resolution used to render training data
 InputModality = Literal["language", "vision", "vision_language"]
@@ -106,6 +111,37 @@ def _json_metadata_default(value):
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
+def _write_outcome_summary(save_path, suite_name, task_summaries):
+    """Persist completed episodes before exporting optional media."""
+    path = pathlib.Path(save_path) / "metrics_summary.json"
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(
+        json.dumps(_task_metrics.summarize_run(suite_name, task_summaries), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def _format_metric_rate(value):
+    return "N/A" if value is None else f"{100 * value:.1f}%"
+
+
+def _log_task_outcomes(summary):
+    following, deviation = summary["following"], summary["deviation"]
+    logging.info(
+        "[Metrics] following success=%s touch=%s; deviation success=%s touch-rate SUM=%s; counts=%s",
+        _format_metric_rate(following["success_rate"]), _format_metric_rate(following["touch_rate"]),
+        _format_metric_rate(deviation["success_rate"]), _format_metric_rate(deviation["touch_rate_sum"]),
+        summary["counts"],
+    )
+    for condition, result in deviation["by_goal"].items():
+        logging.info(
+            "[Deviation%s] %s - success=%s touch=%s",
+            " / ORIGINAL TRAINING" if result["is_original_training_goal"] else "", condition,
+            _format_metric_rate(result["success_rate"]), _format_metric_rate(result["touch_rate"]),
+        )
+
+
 def eval_libero(args: Args) -> None:
     # Set random seed
     np.random.seed(args.seed)
@@ -123,6 +159,19 @@ def eval_libero(args: Args) -> None:
     client = _websocket_client_policy.WebsocketClientPolicy(args.host, args.port)
     server_metadata = client.get_server_metadata()
     input_modality = _resolve_input_modality(server_metadata, args.expected_modality)
+
+    # The new result contract applies only to the three approved suites and
+    # requires their complete candidate catalog. Other protocols stay separate.
+    conditions_db = _load_custom_conditions_db(args.task_suite_name) if args.use_custom_conditions else None
+    outcome_metrics_enabled = args.use_custom_conditions and args.task_suite_name in (
+        "libero_cf_object", "libero_cf_spatial", "libero_cf_ood",
+    )
+    task_metadata = {}
+    if outcome_metrics_enabled:
+        task_metadata = _task_metrics.load_task_metadata(
+            pathlib.Path(get_libero_path("conditions")), args.task_suite_name, conditions_db,
+        )
+    task_metric_summaries = {}
 
     global exp_name
     modality_suffix = f"-{input_modality}" if input_modality is not None else ""
@@ -144,15 +193,19 @@ def eval_libero(args: Args) -> None:
                 "args": dataclasses.asdict(args),
                 "server_metadata": server_metadata,
                 "input_modality": input_modality,
+                "evaluation_protocol": "same_destination_first_success_v1" if outcome_metrics_enabled else "legacy",
             },
             fjson,
             indent=2,
             default=_json_metadata_default,
         )
     logging.info("Server input modality: %s", input_modality if input_modality is not None else "unknown")
+    if outcome_metrics_enabled:
+        with open(pathlib.Path(save_path) / "evaluation_catalog.json", "w", encoding="utf-8") as fjson:
+            json.dump({"suite": args.task_suite_name, "tasks": task_metadata}, fjson, indent=2, ensure_ascii=False)
+        _write_outcome_summary(save_path, args.task_suite_name, task_metric_summaries)
 
     # Load per-task custom conditions if provided
-    conditions_db = _load_custom_conditions_db(args.task_suite_name) if args.use_custom_conditions else None
     if conditions_db is not None:
         logging.info(f"Loading custom conditions from {args.task_suite_name}")
     else:
@@ -211,6 +264,8 @@ def eval_libero(args: Args) -> None:
         task_bddl_file = task.problem_folder + "/" + task.bddl_file
         logging.info(f"task_bddl_file: {task_bddl_file}")
         task_segment = os.path.basename(task_bddl_file).replace(".bddl", "")
+        task_spec = task_metadata[task_bddl_file] if outcome_metrics_enabled else None
+        task_metrics = _task_metrics.TaskMetrics(task_bddl_file, task_spec) if outcome_metrics_enabled else None
         if conditions_db is not None:
             selected_conditions = _get_conditions_for_task(
                 conditions_db,
@@ -232,6 +287,8 @@ def eval_libero(args: Args) -> None:
                 try:
                     env.set_success_any_conditions(selected_conditions)
                 except Exception:
+                    if outcome_metrics_enabled:
+                        raise  # Never silently score a different termination protocol.
                     pass
             # Prepare resolution cache for subject instance -> root body name
             subject_to_body_cache = {}
@@ -243,6 +300,8 @@ def eval_libero(args: Args) -> None:
             # Resolve once and print mapping for debugging
             for subj in unique_subjects:
                 resolved = _resolve_instance_root_body_name(env, subj)
+                if outcome_metrics_enabled and resolved is None:
+                    raise ValueError(f"Cannot resolve candidate object for touch recording: {subj}")
                 subject_to_body_cache[subj] = resolved
                 logging.info(f"[Mapping] subject '{subj}' -> root body '{resolved}'")
 
@@ -252,12 +311,25 @@ def eval_libero(args: Args) -> None:
         for episode_idx in tqdm.tqdm(range(args.num_trials_per_task)):
             logging.info(f"\nTask description: {task_description}")
 
-            # Reset environment
-            env.reset()
+            # Initialize all per-episode state before reset/inference can fail.
+            done = False
+            cond_results = {}
+            episode_exception = None
+            end_reason = "time_limit"
+            touch_valid = True
+            touch_error = None
+            baseline_checked = False
+            episode_metrics = None
             action_plan = collections.deque()
-
-            # Set initial states
-            obs = env.set_init_state(initial_states[episode_idx])
+            try:
+                env.reset()
+                obs = env.set_init_state(initial_states[episode_idx])
+            except Exception as exc:
+                if not outcome_metrics_enabled:
+                    raise
+                logging.exception("Episode initialization failed: task=%s episode=%s", task_bddl_file, episode_idx)
+                episode_exception = exc
+                end_reason = "error"
 
             # Setup
             t = 0
@@ -268,7 +340,7 @@ def eval_libero(args: Args) -> None:
             per_condition_episode_touched = {c: False for c in selected_conditions} if len(selected_conditions) > 0 else {}
 
             logging.info(f"Starting episode {task_episodes+1}...")
-            while t < max_steps + args.num_steps_wait:
+            while t < max_steps + args.num_steps_wait and episode_exception is None:
                 try:
                     # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
                     # and we need to wait for them to fall
@@ -276,6 +348,18 @@ def eval_libero(args: Args) -> None:
                         obs, reward, done, info = env.step(LIBERO_DUMMY_ACTION)
                         t += 1
                         continue
+
+                    if outcome_metrics_enabled and not baseline_checked:
+                        baseline = env.evaluate_conditions(selected_conditions)
+                        if set(baseline) != set(selected_conditions):
+                            raise ValueError("Incomplete initial condition evaluation")
+                        baseline_checked = True
+                        if any(baseline.values()):
+                            cond_results = baseline
+                            end_reason = "invalid_initial"
+                            done = False
+                            logging.error("Candidate goal already holds before policy actions: %s", baseline)
+                            break
 
                     # Get preprocessed image
                     # IMPORTANT: rotate 180 degrees to match train preprocessing
@@ -333,7 +417,7 @@ def eval_libero(args: Args) -> None:
                     # Best-effort touch detection after sim step
                     try:
                         if len(selected_conditions) > 0:
-                            contact_names = _get_gripper_contact_body_names(env)
+                            contact_names = _get_gripper_contact_body_names(env, strict=True) if outcome_metrics_enabled else _get_gripper_contact_body_names(env)
                             for cond in selected_conditions:
                                 if per_condition_episode_touched.get(cond, False):
                                     continue
@@ -342,6 +426,9 @@ def eval_libero(args: Args) -> None:
                                 if resolved and (resolved in contact_names):
                                     per_condition_episode_touched[cond] = True
                     except Exception as e:
+                        touch_valid = False
+                        if touch_error is None:
+                            touch_error = f"{type(e).__name__}: {e}"
                         logging.error(f"Failed to record touch event: {e}")
                     
 
@@ -358,25 +445,58 @@ def eval_libero(args: Args) -> None:
                     except Exception as e:
                         logging.error(f"Failed to record trajectory step: {e}")
                     if done:
-                        task_successes += 1
-                        total_successes += 1
+                        end_reason = "candidate_success"
+                        if not outcome_metrics_enabled:
+                            task_successes += 1
+                            total_successes += 1
                         break
                     t += 1
 
-                except Exception:
+                except Exception as exc:
                     logging.exception(
                         "Rollout error: task_id=%s episode_index=%s step=%s",
                         task_id, episode_idx, t,
                     )
-                    if args.stop_on_error:
+                    episode_exception = exc
+                    end_reason = "error"
+                    done = False
+                    if args.stop_on_error and not outcome_metrics_enabled:
                         raise
                     break
 
             task_episodes += 1
             total_episodes += 1
 
-            # Update per-condition stats if active
-            if len(selected_conditions) > 0:
+            # Classify only complete, normally executed episodes. Keep unknown
+            # results distinct from an ordinary failure to complete a goal.
+            if outcome_metrics_enabled:
+                if end_reason not in ("error", "invalid_initial"):
+                    try:
+                        cond_results = env.evaluate_conditions(selected_conditions)
+                        if set(cond_results) != set(selected_conditions):
+                            raise ValueError("Incomplete final condition evaluation")
+                        if bool(any(cond_results.values())) != (end_reason == "candidate_success"):
+                            raise ValueError("Returned done does not match candidate OR conditions")
+                    except Exception as exc:
+                        logging.exception("Could not score episode: %s", task_bddl_file)
+                        episode_exception = exc
+                        end_reason = "error"
+                episode_metrics = _task_metrics.build_episode_result(
+                    task_spec, cond_results, per_condition_episode_touched,
+                    end_reason=end_reason,
+                    error=f"{type(episode_exception).__name__}: {episode_exception}" if episode_exception is not None else None,
+                    touch_valid=touch_valid,
+                )
+                done = episode_metrics["status"] == "valid" and (
+                    episode_metrics["following"]["success"] or episode_metrics["deviation"]["success"]
+                )
+                if done:
+                    task_successes += 1
+                    total_successes += 1
+                task_metrics.add_episode(episode_metrics)
+                task_metric_summaries[task_bddl_file] = task_metrics.summary()
+                _write_outcome_summary(save_path, args.task_suite_name, task_metric_summaries)
+            elif len(selected_conditions) > 0:
                 try:
                     cond_results = env.evaluate_conditions(selected_conditions)
                 except Exception:
@@ -384,19 +504,7 @@ def eval_libero(args: Args) -> None:
 
                 success_cond = None
 
-                # # Determine which condition(s) succeeded this episode
-                # successful_conditions = [c for c in selected_conditions if bool(cond_results.get(c, False))]
-                # # Choose a primary successful condition (if any) for reporting / video naming
-                # success_cond = successful_conditions[0] if len(successful_conditions) > 0 else None
-
-                # # If one condition succeeded, mark all other conditions as untouched for this episode
-                # # (even if they were previously detected as touched)
-                # if success_cond is not None:
-                #     for c in selected_conditions:
-                #         if c != success_cond and per_condition_episode_touched.get(c, False):
-                #             per_condition_episode_touched[c] = False
-
-                # Now update per-condition stats using the (possibly adjusted) touch flags
+                # Legacy suites retain their existing per-condition output.
                 for cond in selected_conditions:
                     # increment episode counts
                     task_condition_stats[cond]["episodes"] += 1
@@ -420,7 +528,11 @@ def eval_libero(args: Args) -> None:
 
 
             suffix = "success" if done else "failure"
-            if len(selected_conditions) > 0:
+            if outcome_metrics_enabled:
+                if episode_metrics["status"] != "valid":
+                    suffix = episode_metrics["status"]
+                video_name = f"rollout_{task_segment}_{episode_idx:03d}_{episode_metrics['outcome']}.mp4"
+            elif len(selected_conditions) > 0:
                 if suffix == "success":
                     video_name = f"rollout_{task_segment}_{episode_idx:03d}_{suffix}_({success_cond}).mp4"
                 else:
@@ -428,13 +540,6 @@ def eval_libero(args: Args) -> None:
             else:
                 video_name = f"rollout_{task_segment}_{episode_idx:03d}_{suffix}.mp4"
             
-            # Save a replay video of the episode
-            imageio.mimwrite(
-                pathlib.Path(video_out_path) / video_name,
-                [np.asarray(x) for x in replay_images],
-                fps=10,
-            )
-
             # Save end-effector trajectory as a point cloud (PLY)
             try:
                 if len(eef_points) > 0:
@@ -477,13 +582,36 @@ def eval_libero(args: Args) -> None:
                     "sent_prompt": str(task_description),
                     "max_steps": int(max_steps),
                 })
-                with open(traj_path, "w") as fjson:
+                if outcome_metrics_enabled:
+                    episode_summary.update(episode_metrics)
+                    episode_summary["touch_error"] = touch_error
+                    episode_summary["raw_condition_results"] = cond_results
+                with open(traj_path, "w", encoding="utf-8") as fjson:
                     json.dump(episode_summary, fjson, indent=2)
                 logging.info(f"Wrote episode trajectory to {traj_path}")
             except Exception as e:
                 logging.error(f"Failed to write episode trajectory JSON: {e}")
+                if outcome_metrics_enabled:
+                    raise
 
-            if len(selected_conditions) > 0:
+            # Media export cannot erase the already persisted scoring result.
+            try:
+                if replay_images:
+                    imageio.mimwrite(
+                        pathlib.Path(video_out_path) / video_name,
+                        [np.asarray(x) for x in replay_images], fps=10,
+                    )
+            except Exception:
+                if not outcome_metrics_enabled:
+                    raise
+                logging.exception("Failed to export replay video: %s", video_name)
+
+            if outcome_metrics_enabled:
+                _log_task_outcomes(task_metric_summaries[task_bddl_file])
+                if episode_exception is not None and args.stop_on_error:
+                    env.close()
+                    raise episode_exception
+            elif len(selected_conditions) > 0:
                 # Print running per-condition tallies for this task
                 for cond in selected_conditions:
                     stats = task_condition_stats[cond]
@@ -501,7 +629,10 @@ def eval_libero(args: Args) -> None:
         # Per-condition task-level stats
         logging.info("-" * 50)
         logging.info(f"Final results for task: {task_segment}")
-        if len(selected_conditions) > 0:
+        if outcome_metrics_enabled:
+            _log_task_outcomes(task_metrics.summary())
+            env.close()
+        elif len(selected_conditions) > 0:
             for cond in selected_conditions:
                 stats = task_condition_stats[cond]
                 if stats["episodes"] > 0:
@@ -516,7 +647,9 @@ def eval_libero(args: Args) -> None:
             logging.info(f"Current task touch rate: {float(task_touches) / float(task_episodes)}")
         logging.info("-" * 50)
 
-    if conditions_db is None:    
+    if outcome_metrics_enabled:
+        logging.info("Following/deviation metrics saved to %s", pathlib.Path(save_path) / "metrics_summary.json")
+    elif conditions_db is None:
         logging.info(f"Total success rate: {float(total_successes) / float(total_episodes)}")
         logging.info(f"Total episodes: {total_episodes}")
 
@@ -614,16 +747,19 @@ def _save_points_as_ply(points_xyz: np.ndarray, out_path: pathlib.Path) -> None:
 
 
 
-def _get_gripper_contact_body_names(env):
+def _get_gripper_contact_body_names(env, *, strict=False):
     """
     Return a set of instance (root body) names that are currently in contact with the gripper.
     We walk each contacted body's parent chain up to its root (child of world) to get the instance name,
     then return those root names. This enables exact matching against condition object instance names.
+    Strict mode reports failed observations instead of silently recording no touch.
     """
     names = set()
     try:
         sim = getattr(env, "sim", None)
         if sim is None or getattr(sim, "data", None) is None or getattr(sim, "model", None) is None:
+            if strict:
+                raise ValueError("Simulator contact data unavailable")
             return names
         model = sim.model
         data = sim.data
@@ -635,6 +771,8 @@ def _get_gripper_contact_body_names(env):
                 try:
                     return str(model.body_names[int(body_id)])
                 except Exception:
+                    if strict:
+                        raise
                     return ""
 
         def is_gripper_body(name: str) -> bool:
@@ -649,6 +787,8 @@ def _get_gripper_contact_body_names(env):
             try:
                 parent = int(model.body_parentid[bid])
             except Exception:
+                if strict:
+                    raise
                 return bid
             # body 0 is world
             while parent > 0:
@@ -656,10 +796,12 @@ def _get_gripper_contact_body_names(env):
                 try:
                     parent = int(model.body_parentid[bid])
                 except Exception:
+                    if strict:
+                        raise
                     break
             return bid
 
-        ncon = int(getattr(data, "ncon", 0))
+        ncon = int(data.ncon) if strict else int(getattr(data, "ncon", 0))
         for i in range(ncon):
             try:
                 c = data.contact[i]
@@ -676,9 +818,13 @@ def _get_gripper_contact_body_names(env):
                     rb1 = root_body_id(b1)
                     names.add(body_name(rb1))
             except Exception:
+                if strict:
+                    raise
                 continue
         return names
     except Exception:
+        if strict:
+            raise
         return names
 
 def _resolve_instance_root_body_name(env, instance_name: str):

@@ -1,0 +1,167 @@
+{
+    "schema_version": 1,
+    "suite": "libero_cf_object",
+    "scope": "same_destination_pick_and_place",
+    "tasks": {
+        "libero_cf_object/01-pick_up_the_cream_cheese_and_place_it_in_the_basket.bddl": {
+            "following_condition": "in cream_cheese_1 basket_1_contain_region",
+            "original_training": {
+                "suite": "libero_object",
+                "task": "pick_up_the_alphabet_soup_and_place_it_in_the_basket",
+                "condition": "in alphabet_soup_1 basket_1_contain_region"
+            },
+            "conditions": [
+                "in cream_cheese_1 basket_1_contain_region",
+                "in alphabet_soup_1 basket_1_contain_region",
+                "in salad_dressing_1 basket_1_contain_region",
+                "in milk_1 basket_1_contain_region",
+                "in tomato_sauce_1 basket_1_contain_region",
+                "in butter_1 basket_1_contain_region"
+            ]
+        },
+        "libero_cf_object/02-pick_up_the_butter_and_place_it_in_the_basket.bddl": {
+            "following_condition": "in butter_1 basket_1_contain_region",
+            "original_training": {
+                "suite": "libero_object",
+                "task": "pick_up_the_cream_cheese_and_place_it_in_the_basket",
+                "condition": "in cream_cheese_1 basket_1_contain_region"
+            },
+            "conditions": [
+                "in butter_1 basket_1_contain_region",
+                "in cream_cheese_1 basket_1_contain_region",
+                "in alphabet_soup_1 basket_1_contain_region",
+                "in milk_1 basket_1_contain_region",
+                "in tomato_sauce_1 basket_1_contain_region",
+                "in orange_juice_1 basket_1_contain_region"
+            ]
+        },
+        "libero_cf_object/03-pick_up_the_tomato_sauce_and_place_it_in_the_basket.bddl": {
+            "following_condition": "in tomato_sauce_1 basket_1_contain_region",
+            "original_training": {
+                "suite": "libero_object",
+                "task": "pick_up_the_salad_dressing_and_place_it_in_the_basket",
+                "condition": "in salad_dressing_1 basket_1_contain_region"
+            },
+            "conditions": [
+                "in tomato_sauce_1 basket_1_contain_region",
+                "in salad_dressing_1 basket_1_contain_region",
+                "in ketchup_1 basket_1_contain_region",
+                "in alphabet_soup_1 basket_1_contain_region",
+                "in cream_cheese_1 basket_1_contain_region",
+                "in milk_1 basket_1_contain_region"
+            ]
+        },
+        "libero_cf_object/04-pick_up_the_salad_dressing_and_place_it_in_the_basket.bddl": {
+            "following_condition": "in salad_dressing_1 basket_1_contain_region",
+            "original_training": {
+                "suite": "libero_object",
+                "task": "pick_up_the_bbq_sauce_and_place_it_in_the_basket",
+                "condition": "in bbq_sauce_1 basket_1_contain_region"
+            },
+            "conditions": [
+                "in salad_dressing_1 basket_1_contain_region",
+                "in bbq_sauce_1 basket_1_contain_region",
+                "in chocolate_pudding_1 basket_1_contain_region",
+                "in ketchup_1 basket_1_contain_region",
+                "in alphabet_soup_1 basket_1_contain_region",
+                "in cream_cheese_1 basket_1_contain_region"
+            ]
+        },
+        "libero_cf_object/05-pick_up_the_milk_and_place_it_in_the_basket.bddl": {
+            "following_condition": "in milk_1 basket_1_contain_region",
+            "original_training": {
+                "suite": "libero_object",
+                "task": "pick_up_the_ketchup_and_place_it_in_the_basket",
+                "condition": "in ketchup_1 basket_1_contain_region"
+            },
+            "conditions": [
+                "in milk_1 basket_1_contain_region",
+                "in ketchup_1 basket_1_contain_region",
+                "in bbq_sauce_1 basket_1_contain_region",
+                "in salad_dressing_1 basket_1_contain_region",
+                "in alphabet_soup_1 basket_1_contain_region",
+                "in cream_cheese_1 basket_1_contain_region"
+            ]
+        },
+        "libero_cf_object/06-pick_up_the_bbq_sauce_and_place_it_in_the_basket.bddl": {
+            "following_condition": "in bbq_sauce_1 basket_1_contain_region",
+            "original_training": {
+                "suite": "libero_object",
+                "task": "pick_up_the_tomato_sauce_and_place_it_in_the_basket",
+                "condition": "in tomato_sauce_1 basket_1_contain_region"
+            },
+            "conditions": [
+                "in bbq_sauce_1 basket_1_contain_region",
+                "in tomato_sauce_1 basket_1_contain_region",
+                "in milk_1 basket_1_contain_region",
+                "in butter_1 basket_1_contain_region",
+                "in orange_juice_1 basket_1_contain_region",
+                "in chocolate_pudding_1 basket_1_contain_region"
+            ]
+        },
+        "libero_cf_object/07-pick_up_the_ketchup_and_place_it_in_the_basket.bddl": {
+            "following_condition": "in ketchup_1 basket_1_contain_region",
+            "original_training": {
+                "suite": "libero_object",
+                "task": "pick_up_the_butter_and_place_it_in_the_basket",
+                "condition": "in butter_1 basket_1_contain_region"
+            },
+            "conditions": [
+                "in ketchup_1 basket_1_contain_region",
+                "in butter_1 basket_1_contain_region",
+                "in tomato_sauce_1 basket_1_contain_region",
+                "in orange_juice_1 basket_1_contain_region",
+                "in chocolate_pudding_1 basket_1_contain_region",
+                "in bbq_sauce_1 basket_1_contain_region"
+            ]
+        },
+        "libero_cf_object/08-pick_up_the_orange_juice_and_place_it_in_the_basket.bddl": {
+            "following_condition": "in orange_juice_1 basket_1_contain_region",
+            "original_training": {
+                "suite": "libero_object",
+                "task": "pick_up_the_milk_and_place_it_in_the_basket",
+                "condition": "in milk_1 basket_1_contain_region"
+            },
+            "conditions": [
+                "in orange_juice_1 basket_1_contain_region",
+                "in milk_1 basket_1_contain_region",
+                "in cream_cheese_1 basket_1_contain_region",
+                "in tomato_sauce_1 basket_1_contain_region",
+                "in butter_1 basket_1_contain_region",
+                "in chocolate_pudding_1 basket_1_contain_region"
+            ]
+        },
+        "libero_cf_object/09-pick_up_the_alphabet_soup_and_place_it_in_the_basket.bddl": {
+            "following_condition": "in alphabet_soup_1 basket_1_contain_region",
+            "original_training": {
+                "suite": "libero_object",
+                "task": "pick_up_the_chocolate_pudding_and_place_it_in_the_basket",
+                "condition": "in chocolate_pudding_1 basket_1_contain_region"
+            },
+            "conditions": [
+                "in alphabet_soup_1 basket_1_contain_region",
+                "in chocolate_pudding_1 basket_1_contain_region",
+                "in orange_juice_1 basket_1_contain_region",
+                "in bbq_sauce_1 basket_1_contain_region",
+                "in ketchup_1 basket_1_contain_region",
+                "in salad_dressing_1 basket_1_contain_region"
+            ]
+        },
+        "libero_cf_object/10-pick_up_the_chocolate_pudding_and_place_it_in_the_basket.bddl": {
+            "following_condition": "in chocolate_pudding_1 basket_1_contain_region",
+            "original_training": {
+                "suite": "libero_object",
+                "task": "pick_up_the_orange_juice_and_place_it_in_the_basket",
+                "condition": "in orange_juice_1 basket_1_contain_region"
+            },
+            "conditions": [
+                "in chocolate_pudding_1 basket_1_contain_region",
+                "in orange_juice_1 basket_1_contain_region",
+                "in butter_1 basket_1_contain_region",
+                "in bbq_sauce_1 basket_1_contain_region",
+                "in ketchup_1 basket_1_contain_region",
+                "in salad_dressing_1 basket_1_contain_region"
+            ]
+        }
+    }
+}

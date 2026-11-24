@@ -25,3 +25,5 @@ rollouts_zip/
 
 # uv virtual environment
 .venv
+
+ccfa-workfiles

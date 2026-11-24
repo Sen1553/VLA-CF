@@ -53,15 +53,16 @@ The paper reports results for two of these conditions per task: the instructed (
 |---|---|---|
 | `libero_cf_spatial` | 15 | Forked from LIBERO-Spatial, up to 4 conditions per task |
 | `libero_cf_spatial_focused` | 15 | Focused scene variant of `libero_cf_spatial`: training-task object removed in each scene |
-| `libero_cf_object` | 10 | Forked from LIBERO-Object, up to 4 conditions per task |
+| `libero_cf_object` | 10 | Forked from LIBERO-Object; local evaluation now checks all 6 movable objects going into the basket |
 | `libero_cf_long` | 10 | Forked from LIBERO-10, long-horizon manipulation |
 | `libero_cf_ood` | 15 | Based on LIBERO-Spatial, with out-of-distribution objects (coke can, beer, cup, apple, banana) not seen in LIBERO training |
 | `libero_cf_probe` (`libero-cf-probe`) | 7 | Independent, fixed-order selection of 3 CF-Object and 4 CF-Spatial tasks |
 
 The **libero-cf-probe** suite has its own BDDL files, initial states, and condition
 JSON under the canonical name `libero_cf_probe`. Both spellings select the same
-suite. Original task names, conditions, and initial states are preserved, and the
-source suites are unchanged. Evaluation follows this order (task IDs are zero-based):
+suite. Its copied task names, conditions, and initial states are preserved. The
+Object condition expansion described below does not change these independent
+Probe copies. Evaluation follows this order (task IDs are zero-based):
 
 | Task ID | Source suite | Task | Max steps |
 |---|---|---|---|
@@ -85,6 +86,78 @@ Rollouts are saved under `rollouts/libero_cf_probe-<timestamp>/`, or
 verified input modality. The new suite
 does not define new model normalization statistics; model-server normalization
 must still match its checkpoint and the source tasks (Object or Spatial).
+
+### Following / deviation metrics (local extension)
+
+With custom conditions enabled (the default), `libero_cf_object`,
+`libero_cf_spatial`, and `libero_cf_ood` use the
+`same_destination_first_success_v1` protocol. Object monitors all six non-basket
+objects going into the basket; Spatial and OOD each monitor four non-plate
+objects going onto the plate. This is a finite **same-destination** catalog,
+not an enumeration of every feasible manipulation in the scene. Long, Focused,
+and Probe retain their existing evaluation paths.
+
+The original `In`/`On` predicates and first-candidate-success OR termination are
+retained. Limits remain 280 policy actions for Object and 220 for Spatial/OOD,
+in addition to the stabilization steps. Enlarging the Object catalog can end a
+rollout earlier than the previous two-condition catalog, so results from the two
+protocols must be distinguished. Goal satisfaction measures placement state;
+it does not separately verify lifting, transport, release, or sustained stability.
+
+Explicit roles and original LIBERO task references are stored in
+[`libero/libero/conditions/metadata/`](libero/libero/conditions/metadata/).
+Following is never inferred from condition order. The original-training marker
+identifies the corresponding benchmark task, not an independently verified
+checkpoint training-data record.
+
+Each run saves `evaluation_catalog.json`, the protocol in `run_config.json`,
+per-episode trajectory JSON, and an incrementally updated `metrics_summary.json`:
+
+| Summary field | Meaning |
+|---|---|
+| `following.success_rate` | Fraction of valid episodes satisfying the instruction goal |
+| `following.touch_rate` | Fraction with at least one observed gripper contact with its object |
+| `deviation.success_rate` | Fraction satisfying any non-instruction goal; each episode counts once |
+| `deviation.by_goal` | Success and touch counts/rates for **every** individual deviation condition |
+| `deviation.original_training` | Original goal's success/touch rates and source task; already included in deviation |
+| `deviation.only_success_rate` | Fraction satisfying deviation but not following |
+| `deviation.touch_rate_sum` | **Sum** of all individual deviation objects' touch rates, not an any-touch probability |
+
+JSON rates are fractions: `0.25` means 25%, and `touch_rate_sum=1.4` means 140%.
+For example, touching two deviation objects in every valid episode gives a sum
+of 200%. Repeated contact with the same object within an episode counts once.
+Contact is sampled after policy control steps, excluding stabilization, until
+the episode ends. Monitored objects come from the candidate conditions; receiving
+containers are not additional touch targets. No first-touch-time metric is added.
+
+Episode `outcome` is `following_only`, `deviation_only`, `both`, or `failure`.
+`both` means both kinds of goal hold at the first successful check and contributes
+to both success rates. `failure` means the time limit was reached with no candidate
+goal satisfied. Runtime/scoring errors are recorded as `error`; a candidate already
+true after stabilization is `invalid_initial`. These are separately counted and
+excluded from valid-episode success denominators. Failed touch observations yield
+null touches and are excluded from the touch denominator, while usable task
+success observations are retained. Empty denominators produce JSON `null`, not 0.
+The legacy episode `result="success"` still means any candidate goal succeeded;
+use `following` / `deviation` for instruction-specific results. Videos and their
+matching trajectory files include the explicit `outcome` in their names.
+
+`metrics_summary.json` contains `tasks` keyed by full task path, `pooled` rates
+weighted by valid episode counts, and `macro` rates averaged equally over tasks
+with usable observations. `macro.deviation.touch_rate_sum` is the average of
+task-level sums, not a sum across unrelated scenes. All attempted, valid, error,
+invalid-initial, and touch-valid counts are reported. Do not add the
+original-training rate to the total deviation rate a second time.
+
+After starting the policy server, the usual command enables this reporting:
+
+```bash
+python eval/main_cf.py --args.task_suite_name libero_cf_object --args.port 8000
+```
+
+Replace the suite with `libero_cf_spatial` or `libero_cf_ood` as needed. No model
+server change is required. Missing or stale role metadata is an error, rather
+than a silent fallback to a different scoring protocol.
 
 ### Dataset
 
