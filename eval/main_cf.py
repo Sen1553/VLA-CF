@@ -69,7 +69,7 @@ class Args:
 def _resolve_input_modality(
     server_metadata: Dict, expected_modality: Optional[InputModality]
 ) -> Optional[InputModality]:
-    """Only label a run when the server's modality and mask flags agree."""
+    """Only label a run when its model-specific modality contract is verified."""
     masks_by_modality = {
         "language": {"mask_language_tokens": False, "mask_vision_tokens": True},
         "vision": {"mask_language_tokens": True, "mask_vision_tokens": False},
@@ -80,17 +80,44 @@ def _resolve_input_modality(
 
     metadata = server_metadata if isinstance(server_metadata, dict) else {}
     modality = metadata.get("input_modality")
+    is_openvla = metadata.get("model_type") == "openvla_oft"
     errors = []
     if not isinstance(modality, str) or modality not in masks_by_modality:
         errors.append(f"input_modality must be one of {tuple(masks_by_modality)}, got {modality!r}")
     else:
         for key, expected_mask in masks_by_modality[modality].items():
+            # OpenVLA removes the instruction text; it does not mask language tokens.
+            if is_openvla and key == "mask_language_tokens":
+                key = "empty_language"
             actual_mask = metadata.get(key)
             if type(actual_mask) is not bool or actual_mask != expected_mask:
                 errors.append(f"{key} must be {expected_mask!r} for {modality!r}, got {actual_mask!r}")
 
-    if metadata.get("model_backend") != "jax":
-        errors.append(f"model_backend must be 'jax', got {metadata.get('model_backend')!r}")
+        if is_openvla:
+            vision_masked = masks_by_modality[modality]["mask_vision_tokens"]
+            expected_fields = {
+                "language_ablation_method": "empty_prompt" if modality == "vision" else "none",
+                "vision_ablation_method": "attention_mask" if vision_masked else "none",
+                "vision_mask_scope": "inserted_patch_span" if vision_masked else "none",
+            }
+            use_proprio = metadata.get("use_proprio")
+            if type(use_proprio) is not bool:
+                errors.append(f"use_proprio must be a bool, got {use_proprio!r}")
+            else:
+                # The existing OpenVLA mask also hides the appended proprio token.
+                state_visible = use_proprio and not vision_masked
+                actual_visible = metadata.get("state_input_visible")
+                if type(actual_visible) is not bool or actual_visible != state_visible:
+                    errors.append(f"state_input_visible must be {state_visible!r}, got {actual_visible!r}")
+                expected_fields["state_input_mode"] = "continuous" if state_visible else "none"
+            for key, expected_value in expected_fields.items():
+                actual_value = metadata.get(key)
+                if actual_value != expected_value:
+                    errors.append(f"{key} must be {expected_value!r}, got {actual_value!r}")
+
+    expected_backend = "pytorch" if is_openvla else "jax"
+    if metadata.get("model_backend") != expected_backend:
+        errors.append(f"model_backend must be {expected_backend!r}, got {metadata.get('model_backend')!r}")
     if expected_modality is not None:
         if modality != expected_modality:
             errors.append(f"expected input_modality={expected_modality!r}, got {modality!r}")

@@ -60,7 +60,8 @@ class Args:
     # Probability of injecting the default prompt. If 0, this transform is a no-op.
     probability: float = 0.0
 
-    # Explicit input ablation for JAX pi05_libero. None preserves the checkpoint config.
+    # Visual/language ablation for JAX pi0 and pi0.5. Pi0 retains robot state.
+    # None preserves the checkpoint config.
     modality: Literal["language", "vision", "vision_language"] | None = None
 
     # Port to serve the policy on.
@@ -110,11 +111,11 @@ def _create_checkpoint_policy(
     if modality is not None:
         if modality not in ("language", "vision", "vision_language"):
             raise ValueError(f"Unsupported input modality: {modality}")
-        if not isinstance(config.model, _pi0_config.Pi0Config) or not config.model.pi05:
-            raise ValueError("--modality requires a pi0.5 config, such as pi05_libero.")
-        if config.model.discrete_state_input:
+        if not isinstance(config.model, _pi0_config.Pi0Config):
+            raise ValueError("--modality requires a pi0 or pi0.5 config, such as pi0_libero or pi05_libero.")
+        if config.model.pi05 and config.model.discrete_state_input:
             raise ValueError(
-                "--modality requires discrete_state_input=False (as in pi05_libero), "
+                "--modality for pi0.5 requires discrete_state_input=False (as in pi05_libero), "
                 "so masking language does not also remove robot state tokens."
             )
         # Configure before Policy creates its frozen JIT wrapper.
@@ -128,6 +129,8 @@ def _create_checkpoint_policy(
         )
         metadata.update(
             input_modality=modality,
+            model_type="pi05" if config.model.pi05 else "pi0",
+            state_input_mode="none" if config.model.pi05 else "continuous",
             mask_language_tokens=config.model.mask_language_tokens,
             mask_vision_tokens=config.model.mask_vision_tokens,
             sampling_num_steps=10,

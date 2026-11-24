@@ -240,10 +240,52 @@ Serve the policy:
 CUDA_VISIBLE_DEVICES=<ID> python serving/serve_openvla_oft.py \
     --model_path moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10 \
     --task_suite_name <libero_suite> \
+    --modality vision_language \
     --port <port>
 ```
 
 `<libero_suite>` selects the checkpoint's normalization statistics and must be the standard LIBERO suite that the CF suite is based on, such as `libero_spatial` for `libero_cf_spatial`.
+
+The ordinary OpenVLA-OFT server **requires an explicit `--modality`**. There is
+no default: include it even for a baseline with both modalities present.
+It resolves the existing switches as follows:
+
+| `--modality` | `empty_language` | `mask_vision_tokens` | Effective inputs with `use_proprio=True` |
+|---|---|---|---|
+| `language` | False | True | Task instruction; the current vision mask also hides robot state |
+| `vision` | True | False | Images and robot state; task instruction is empty |
+| `vision_language` | False | False | Images, task instruction, and robot state |
+
+The legacy `--empty-language` and `--mask-vision-tokens` options remain accepted,
+but `--modality` takes precedence; startup logs show the resolved values.
+`use_proprio` remains independently configurable. These modes reuse OpenVLA's
+current implementation: language removal is an empty prompt, and the vision
+attention mask covers the entire inserted patch span, including proprio tokens.
+The client still sends the original prompt and complete observations.
+
+For example, evaluate the `vision` server on Object with the existing evaluator
+option (set the server's normalization suite to `libero_object`):
+
+```bash
+python eval/main_cf.py \
+    --args.task_suite_name libero_cf_object \
+    --args.port 8000 \
+    --args.replan_steps 8 \
+    --args.expected_modality vision
+```
+
+Use the same mode on the server and evaluator. The evaluator checks
+`empty_language` for OpenVLA-OFT and `mask_language_tokens` for JAX π0/π0.5,
+along with the vision flag and backend, before starting rollouts. OpenVLA's
+handshake records `model_type=openvla_oft`, `model_backend=pytorch`, the resolved
+flags, ablation methods, vision-mask scope, configured `use_proprio`, and actual
+state visibility in `run_config.json`. A mismatch with
+`--args.expected_modality` stops evaluation. Old servers without verifiable
+metadata can still run without that option, with an unknown modality.
+
+This mandatory option applies to `serve_openvla_oft.py`. The TF/VA CAG servers
+retain their separate dual-branch behavior and are not labeled as these
+single-policy ablations.
 
 #### Step 2: Run the benchmark
 
@@ -271,24 +313,39 @@ python eval/batch_visualize.py --rollouts_dir rollouts/<your_rollouts_dir>
 
 This generates per-task videos, end-effector trajectories, and gripper-close heatmaps.
 
-#### Three input modalities on LIBERO-CF-PROBE (JAX π0.5)
+#### Three input modalities on LIBERO-CF-PROBE (JAX π0 / π0.5)
 
-Use the same `pi05_libero` checkpoint for all three runs. Select the modality
-when starting `scripts/serve_policy.py`; the evaluator checks the server's
-reported masks before starting any episodes.
+Use the same checkpoint for all three runs within each model: `pi0_libero` for
+π0 or `pi05_libero` for π0.5. Select the modality when starting
+`scripts/serve_policy.py`; the evaluator checks the server's reported masks
+before starting any episodes. The option controls vision and language; π0
+retains its continuous robot-state input in all three modes.
 
-| `--modality` | Inputs available to action generation | Language mask | Vision mask |
-|---|---|---|---|
-| `language` | Task instruction only | False | True |
-| `vision` | Agent-view and wrist images only | True | False |
-| `vision_language` | Images and task instruction | False | False |
+| `--modality` | π0 inputs | π0.5 LIBERO inputs | Language mask | Vision mask |
+|---|---|---|---|---|
+| `language` | Task instruction and robot state | Task instruction | False | True |
+| `vision` | Agent-view/wrist images and robot state | Agent-view/wrist images | True | False |
+| `vision_language` | Images, task instruction, and robot state | Images and task instruction | False | False |
 
 Run **one experiment at a time**. In the openpi environment, from `openpi-cf/`,
-start the language-only server:
+start the π0.5 language-only server (`--env LIBERO` still defaults to π0.5):
 
 ```bash
 uv run scripts/serve_policy.py --env LIBERO --port 8000 --modality language
 ```
+
+For π0, explicitly select its config and checkpoint. This example retains
+language and robot state:
+
+```bash
+uv run scripts/serve_policy.py --env LIBERO --port 8000 --modality language \
+    policy:checkpoint \
+    --policy.config pi0_libero \
+    --policy.dir /path/to/pi0_libero
+```
+
+Keep `--modality` before the `policy:checkpoint` subcommand. Repeat with `vision`
+and `vision_language` using the same checkpoint.
 
 In a separate terminal, activate the benchmark environment and run from the
 repository root:
@@ -320,22 +377,29 @@ uv run scripts/serve_policy.py --port 8000 --modality language \
     --policy.dir /path/to/pi05_libero
 ```
 
-The modality option requires a JAX π0.5 checkpoint and
-`discrete_state_input=False`, as configured by `pi05_libero`. A checkpoint
-containing `model.safetensors` is rejected for these experiments because this
-repository's PyTorch implementation does not implement the model-level mask
-flags. Omitting `--modality` preserves the model config's existing mask settings.
+The modality option requires a JAX π0 or π0.5 checkpoint (a `params/` directory).
+For π0.5 it also requires `discrete_state_input=False`, as configured by
+`pi05_libero`, to avoid masking robot state together with language tokens.
+A checkpoint containing `model.safetensors` is rejected for these experiments
+because this repository's PyTorch implementation does not implement the
+model-level mask flags. Omitting `--modality` preserves the model config's
+existing mask settings.
 
 The evaluator still sends the original instruction and both images. The server
 sets attention masks **before prefix KV-cache construction and throughout action
 sampling**. Thus language-only does not read image content, and vision-only
 does not read task text. Encoding the masked inputs still takes computation.
-An empty instruction is a separate ablation and is not used here. The state
-array remains in the request for interface compatibility; this π0.5 config
-does not tokenize robot state or add a separate state token.
+An empty instruction is a separate ablation and is not used here. For π0,
+the state array feeds an independent continuous state token; the original
+`pi0_libero` action transforms are retained. For `pi05_libero`, the state array
+remains in the request for interface compatibility, but the model does not
+tokenize robot state or add a separate state token.
 
 Each run saves `run_config.json` with evaluation arguments and server metadata
-(modality, masks, backend, checkpoint, config, and sampling steps). Episode
+(modality, masks, backend, checkpoint, config, and sampling steps). Explicit
+modality runs also record `model_type` (`pi0` / `pi05`) and `state_input_mode`
+(`continuous` / `none` respectively), so identical modality names do not hide
+the difference in robot-state inputs. Episode
 trajectory JSON files include the modality, task ID, original/sent prompt, and
 action-step limit. The three result directories are:
 
@@ -353,11 +417,19 @@ samples. Inspect `per_condition` in the trajectory files: with custom conditions
 `result=success` means **any** candidate condition succeeded, so it does not by
 itself establish success on the instructed target.
 
-The fixed-noise modality tests use a small randomly initialized model and do not
+The fixed-noise tests check both models' modality isolation and π0's continued
+use of robot state. They use small randomly initialized models and do not
 download checkpoints. Run them from `openpi-cf/` in the openpi environment:
 
 ```bash
-uv run pytest src/openpi/models/pi0_test.py -k single_modality_invariance -q
+uv run --no-sync pytest src/openpi/models/pi0_test.py -k 'single_modality_invariance or retains_state_conditioning' -q
+```
+
+The service and evaluator contract tests do not load model weights or a
+simulator. Run them from the repository root (Python 3.11+ for the service tests):
+
+```bash
+python -B -m unittest discover -s eval -p 'test_*modality.py' -v
 ```
 
 ### Example Output

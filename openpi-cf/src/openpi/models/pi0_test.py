@@ -55,7 +55,7 @@ def test_pi0_all_lora():
 
 
 @pytest.fixture
-def tiny_pi05(monkeypatch):
+def tiny_pi0_config(monkeypatch):
     """Keep real attention and sampling, without pretrained weights or large encoders."""
     monkeypatch.setattr(_gemma, "PALIGEMMA_VOCAB_SIZE", 128)
     siglip_module = _siglip.Module
@@ -73,7 +73,6 @@ def tiny_pi05(monkeypatch):
 
     monkeypatch.setattr(_siglip, "Module", tiny_siglip)
     return _pi0_config.Pi0Config(
-        pi05=True,
         discrete_state_input=False,
         paligemma_variant="dummy",
         action_expert_variant="dummy",
@@ -109,16 +108,19 @@ def _enable_random_action_expert_gates(model):
     nnx.update(model, state)
 
 
+@pytest.mark.parametrize("pi05", [False, True], ids=["pi0", "pi05"])
 @pytest.mark.parametrize("modality", ["language", "vision"])
-def test_pi05_single_modality_invariance(tiny_pi05, modality):
+def test_single_modality_invariance(tiny_pi0_config, pi05, modality):
     """Removed inputs cannot leak through prefix prefill or denoising attention."""
     config = dataclasses.replace(
-        tiny_pi05,
+        tiny_pi0_config,
+        pi05=pi05,
         mask_language_tokens=modality == "vision",
         mask_vision_tokens=modality == "language",
     )
     model = config.create(jax.random.key(0))
-    _enable_random_action_expert_gates(model)
+    if pi05:
+        _enable_random_action_expert_gates(model)
 
     observation = config.fake_obs()
     observation = observation.replace(tokenized_prompt=jnp.array([[1, 2, 3, 4]], dtype=jnp.int32))
@@ -153,3 +155,34 @@ def test_pi05_single_modality_invariance(tiny_pi05, modality):
     assert np.isfinite(unmasked_actions).all()
     assert np.isfinite(unmasked_changed_actions).all()
     assert not np.allclose(unmasked_actions, unmasked_changed_actions, rtol=1e-5, atol=1e-5)
+
+
+@pytest.mark.parametrize("modality", ["language", "vision", "vision_language"])
+def test_pi0_retains_state_conditioning(tiny_pi0_config, modality):
+    """Image/text ablation must leave Pi0's separate state input functional."""
+    config = dataclasses.replace(
+        tiny_pi0_config,
+        pi05=False,
+        mask_language_tokens=modality == "vision",
+        mask_vision_tokens=modality == "language",
+    )
+    model = config.create(jax.random.key(0))
+    sample = nnx_utils.module_jit(model.sample_actions)
+    observation = config.fake_obs()
+    observation = observation.replace(tokenized_prompt=jnp.array([[1, 2, 3, 4]], dtype=jnp.int32))
+    # Change the direction, not only the scale, to avoid an RMS normalization
+    # making the two state embeddings equivalent.
+    changed_observation = observation.replace(
+        state=jnp.array([[-0.5, 0.3, -0.2, 0.9, -0.7, 0.1, 0.8]], dtype=jnp.float32)
+    )
+    rng = jax.random.key(1)
+    noise = jax.random.normal(rng, (1, config.action_horizon, config.action_dim))
+
+    # Check raw model predictions: AbsoluteActions postprocessing also uses
+    # state, and could otherwise hide a broken state-conditioning path.
+    actions = sample(rng, observation, noise=noise, num_steps=3)
+    changed_actions = sample(rng, changed_observation, noise=noise, num_steps=3)
+    assert actions.shape == (1, config.action_horizon, config.action_dim)
+    assert np.isfinite(actions).all()
+    assert np.isfinite(changed_actions).all()
+    assert not np.allclose(actions, changed_actions, rtol=1e-5, atol=1e-5)
